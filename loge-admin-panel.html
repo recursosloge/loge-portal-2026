@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LOGE – Panel Admin 2026</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f4f8; color: #1a202c; }
+    input, textarea, select { font-family: inherit; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+    button:focus { outline: none; }
+    input:focus, textarea:focus, select:focus { outline: 2px solid #dc2626; outline-offset: 1px; }
+    @media (max-width: 640px) {
+      body { font-size: 14px; }
+      header { padding: 0 12px; }
+      nav { padding: 0 4px; }
+      main { padding: 12px !important; }
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+
+// ─── FIREBASE CONFIG ───────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyAddzw3OReVYbhZ3l9VcrG4qXxT8GH7uSY",
+  authDomain: "loge-portal-2026.firebaseapp.com",
+  projectId: "loge-portal-2026",
+  storageBucket: "loge-portal-2026.firebasestorage.app",
+  messagingSenderId: "755217961755",
+  appId: "1:755217961755:web:32bb9673533bc2a0c279be",
+  measurementId: "G-NSYK2ET8LY"
+};
+
+let db = null;
+
+try {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+} catch (e) {
+  if (e.code === 'app/duplicate-app') {
+    db = firebase.firestore();
+  }
+}
+
+// ─── UTILIDADES ───────────────────────────────────────────────────────────
+const fmtDate = s => {
+  if (!s) return "—";
+  return new Date(s+"T12:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short"});
+};
+
+// ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────
+const App = () => {
+  const [authenticated, setAuthenticated] = useState(false);
+  const [tab, setTab] = useState("avisos");
+  const [avisos, setAvisos] = useState([]);
+  const [schedule, setSchedule] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  // Cargar datos
+  useEffect(() => {
+    if (!authenticated || !db) return;
+
+    setLoading(true);
+
+    // Escuchar avisos
+    const unsubAvisos = db.collection('avisos').onSnapshot(
+      (snapshot) => {
+        const items = [];
+        snapshot.forEach((doc) => {
+          items.push({ docId: doc.id, ...doc.data() });
+        });
+        setAvisos(items.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)));
+      },
+      (err) => console.error('Error cargando avisos:', err)
+    );
+
+    // Escuchar schedule
+    const unsubSchedule = db.collection('schedule').onSnapshot(
+      (snapshot) => {
+        const items = [];
+        snapshot.forEach((doc) => {
+          items.push({ docId: doc.id, ...doc.data() });
+        });
+        setSchedule(items);
+      },
+      (err) => console.error('Error cargando schedule:', err)
+    );
+
+    setLoading(false);
+
+    return () => {
+      unsubAvisos();
+      unsubSchedule();
+    };
+  }, [authenticated]);
+
+  if (!authenticated) {
+    return <PinScreen onAuthenticate={() => setAuthenticated(true)} />;
+  }
+
+  return <div style={{display:"flex",flexDirection:"column",height:"100vh"}}>
+    <header style={{background:"#dc2626",color:"#fff",padding:"16px 20px",boxShadow:"0 2px 8px rgba(0,0,0,0.2)"}}>
+      <div style={{maxWidth:1200,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          <h1 style={{fontSize:20,fontWeight:800,margin:0}}>👨‍💼 Panel Admin LOGE 2026</h1>
+          <p style={{fontSize:12,color:"#fee2e2",margin:"4px 0 0"}}>Gestión de contenidos</p>
+        </div>
+        <button onClick={()=>setAuthenticated(false)} style={{
+          padding:"8px 14px",background:"rgba(255,255,255,0.2)",border:"1px solid rgba(255,255,255,0.3)",
+          color:"#fff",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:600
+        }}>
+          🔓 Cerrar sesión
+        </button>
+      </div>
+    </header>
+
+    <nav style={{background:"#fff",borderBottom:"2px solid #dc2626",overflowX:"auto",flexShrink:0}}>
+      <div style={{maxWidth:1200,margin:"0 auto",display:"flex",gap:0}}>
+        {[{id:"avisos",label:"📣 Avisos"},{id:"schedule",label:"📅 Cronograma"}].map(n=>(
+          <button key={n.id} onClick={()=>setTab(n.id)} style={{
+            padding:"12px 16px",border:"none",background:"transparent",cursor:"pointer",
+            borderBottom:tab===n.id?"3px solid #dc2626":"3px solid transparent",
+            color:tab===n.id?"#dc2626":"#64748b",fontWeight:tab===n.id?700:500,fontSize:13,
+            whiteSpace:"nowrap",transition:"all 0.15s"
+          }}>
+            {n.label}
+          </button>
+        ))}
+      </div>
+    </nav>
+
+    <main style={{flex:1,overflowY:"auto"}}>
+      {loading ? (
+        <div style={{padding:"40px",textAlign:"center",color:"#64748b"}}>
+          <p>⏳ Cargando...</p>
+        </div>
+      ) : (
+        <>
+          {tab === "avisos" && <AdminAvisos avisos={avisos} db={db} />}
+          {tab === "schedule" && <AdminSchedule schedule={schedule} db={db} />}
+        </>
+      )}
+    </main>
+
+    <footer style={{padding:"10px 16px",textAlign:"center",fontSize:11,
+      color:"#cbd5e1",background:"#f0f4f8",borderTop:"1px solid #e2e8f0",flexShrink:0}}>
+      Panel de administración - LOGE 2026 · Cambios en tiempo real
+    </footer>
+  </div>;
+};
+
+// ─── PANTALLA PIN ──────────────────────────────────────────────────────────
+const PinScreen = ({onAuthenticate}) => {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState(false);
+
+  const handleSubmit = () => {
+    if (pin === "loge2026") {
+      onAuthenticate();
+    } else {
+      setError(true);
+      setPin("");
+      setTimeout(() => setError(false), 1500);
+    }
+  };
+
+  return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"linear-gradient(135deg, #dc2626 0%, #991b1b 100%)"}}>
+    <div style={{background:"#fff",borderRadius:16,padding:40,maxWidth:400,boxShadow:"0 20px 25px rgba(0,0,0,0.15)"}}>
+      <div style={{textAlign:"center",marginBottom:32}}>
+        <div style={{fontSize:48,marginBottom:12}}>🔐</div>
+        <h1 style={{fontSize:24,fontWeight:800,color:"#0f2754",marginBottom:8}}>Panel Admin LOGE</h1>
+        <p style={{fontSize:13,color:"#64748b"}}>Acceso restringido para coordinadores</p>
+      </div>
+
+      <input type="password" value={pin} onChange={(e)=>setPin(e.target.value)}
+        onKeyPress={(e)=>e.key==="Enter"&&handleSubmit()}
+        placeholder="Ingresa tu PIN" style={{width:"100%",padding:"12px",borderRadius:8,border:error?"2px solid #dc2626":"1px solid #e2e8f0",
+        fontSize:14,marginBottom:4,fontWeight:600,letterSpacing:"2px"}} />
+
+      {error && <p style={{color:"#dc2626",fontSize:12,fontWeight:600,marginBottom:16}}>❌ PIN incorrecto</p>}
+
+      <button onClick={handleSubmit} style={{width:"100%",padding:"12px",background:"#dc2626",color:"#fff",
+        border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:14,marginTop:16}}>
+        Ingresar al Panel
+      </button>
+    </div>
+  </div>;
+};
+
+// ─── ADMIN AVISOS ──────────────────────────────────────────────────────────
+const AdminAvisos = ({avisos, db}) => {
+  const [form, setForm] = useState({
+    titulo: "", texto: "", tipo: "info", year: 0, autor: "", pinned: false, vencimiento: ""
+  });
+  const [success, setSuccess] = useState(false);
+
+  const handlePublish = async (e) => {
+    e.preventDefault();
+    if (!form.titulo.trim() || !form.texto.trim()) return;
+
+    try {
+      await db.collection('avisos').add({
+        ...form,
+        fecha: new Date().toISOString().split('T')[0],
+        id: Date.now(),
+        prioridad: form.tipo === "urgente" ? "urgente" : "normal",
+        recurso: null
+      });
+
+      setForm({titulo: "", texto: "", tipo: "info", year: 0, autor: "", pinned: false, vencimiento: ""});
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 2000);
+    } catch (err) {
+      alert('Error publicando aviso: ' + err.message);
+    }
+  };
+
+  const handleDelete = async (docId) => {
+    if (confirm('¿Eliminar este aviso?')) {
+      try {
+        await db.collection('avisos').doc(docId).delete();
+      } catch (err) {
+        alert('Error eliminando aviso: ' + err.message);
+      }
+    }
+  };
+
+  return <div style={{padding:"20px",maxWidth:1000,margin:"0 auto"}}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,marginBottom:40}}>
+      {/* Formulario */}
+      <div style={{background:"#fff",borderRadius:12,padding:20,boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}>
+        <h3 style={{fontSize:16,fontWeight:800,color:"#0f2754",marginBottom:16}}>📝 Publicar Aviso</h3>
+        <form onSubmit={handlePublish} style={{display:"flex",flexDirection:"column",gap:12}}>
+          <input type="text" placeholder="Título" value={form.titulo} onChange={(e)=>setForm({...form,titulo:e.target.value})}
+            style={{padding:"10px",borderRadius:8,border:"1px solid #e2e8f0",fontSize:13}} />
+
+          <textarea placeholder="Texto del aviso" value={form.texto} onChange={(e)=>setForm({...form,texto:e.target.value})}
+            style={{padding:"10px",borderRadius:8,border:"1px solid #e2e8f0",fontSize:13,minHeight:100,resize:"vertical"}} />
+
+          <select value={form.tipo} onChange={(e)=>setForm({...form,tipo:e.target.value})}
+            style={{padding:"10px",borderRadius:8,border:"1px solid #e2e8f0",fontSize:13}}>
+            <option value="info">📋 Informativo</option>
+            <option value="cambio">🔄 Cambio de fecha</option>
+            <option value="urgente">⚠️ Urgente</option>
+            <option value="entrega">📤 Entrega</option>
+          </select>
+
+          <select value={form.year} onChange={(e)=>setForm({...form,year:Number(e.target.value)})}
+            style={{padding:"10px",borderRadius:8,border:"1px solid #e2e8f0",fontSize:13}}>
+            <option value={0}>Para todos</option>
+            <option value={1}>Solo 1° año</option>
+            <option value={2}>Solo 2° año</option>
+          </select>
+
+          <input type="text" placeholder="Tu nombre" value={form.autor} onChange={(e)=>setForm({...form,autor:e.target.value})}
+            style={{padding:"10px",borderRadius:8,border:"1px solid #e2e8f0",fontSize:13}} />
+
+          <input type="date" value={form.vencimiento} onChange={(e)=>setForm({...form,vencimiento:e.target.value})}
+            style={{padding:"10px",borderRadius:8,border:"1px solid #e2e8f0",fontSize:13}} />
+
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13}}>
+            <input type="checkbox" checked={form.pinned} onChange={(e)=>setForm({...form,pinned:e.target.checked})} />
+            <span>⭐ Destacar este aviso</span>
+          </label>
+
+          <button type="submit" style={{padding:"12px",background:"#dc2626",color:"#fff",border:"none",
+            borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>
+            📤 Publicar Aviso
+          </button>
+
+          {success && <div style={{padding:10,background:"#d1fae5",color:"#065f46",borderRadius:8,fontSize:12,fontWeight:600}}>
+            ✅ Aviso publicado correctamente
+          </div>}
+        </form>
+      </div>
+
+      {/* Lista de avisos */}
+      <div style={{background:"#fff",borderRadius:12,padding:20,boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}>
+        <h3 style={{fontSize:16,fontWeight:800,color:"#0f2754",marginBottom:16}}>📌 Avisos Recientes</h3>
+        <div style={{display:"flex",flexDirection:"column",gap:10,maxHeight:400,overflowY:"auto"}}>
+          {avisos.slice(0,10).map(av=>(
+            <div key={av.docId} style={{padding:10,background:"#f8fafc",borderRadius:8,borderLeft:`3px solid #dc2626`}}>
+              <div style={{fontWeight:600,fontSize:12,color:"#0f2754"}}>{av.titulo}</div>
+              <div style={{fontSize:11,color:"#64748b",marginTop:4}}>{av.texto.substring(0,50)}...</div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
+                <span style={{fontSize:10,color:"#94a3b8"}}>👤 {av.autor}</span>
+                <button onClick={()=>handleDelete(av.docId)} style={{
+                  padding:"4px 8px",background:"#fee2e2",color:"#991b1b",border:"none",
+                  borderRadius:4,cursor:"pointer",fontSize:10,fontWeight:600
+                }}>
+                  🗑️ Eliminar
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>;
+};
+
+// ─── ADMIN SCHEDULE ────────────────────────────────────────────────────────
+const AdminSchedule = ({schedule, db}) => {
+  const [year, setYear] = useState(1);
+  const items = useMemo(() => schedule.filter(r => r.a === year).sort((a,b) => (a.s||0) - (b.s||0)), [schedule, year]);
+
+  return <div style={{padding:"20px",maxWidth:1000,margin:"0 auto"}}>
+    <div style={{marginBottom:20,display:"flex",gap:10,alignItems:"center"}}>
+      <label style={{fontSize:13,fontWeight:600}}>Año:</label>
+      <select value={year} onChange={(e)=>setYear(Number(e.target.value))}
+        style={{padding:"8px 12px",borderRadius:8,border:"1px solid #e2e8f0",fontSize:13}}>
+        <option value={1}>1° Año</option>
+        <option value={2}>2° Año</option>
+      </select>
+    </div>
+
+    <div style={{background:"#fff",borderRadius:12,padding:20,boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}>
+      <h3 style={{fontSize:16,fontWeight:800,color:"#0f2754",marginBottom:16}}>📅 Cronograma {year}° año</h3>
+
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead>
+            <tr style={{borderBottom:"2px solid #e2e8f0",background:"#f8fafc"}}>
+              <th style={{padding:10,textAlign:"left",fontWeight:700}}>Semana</th>
+              <th style={{padding:10,textAlign:"left",fontWeight:700}}>Materia</th>
+              <th style={{padding:10,textAlign:"left",fontWeight:700}}>Día</th>
+              <th style={{padding:10,textAlign:"left",fontWeight:700}}>Fecha</th>
+              <th style={{padding:10,textAlign:"left",fontWeight:700}}>Tipo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item,i)=>(
+              <tr key={i} style={{borderBottom:"1px solid #f1f5f9"}}>
+                <td style={{padding:10}}>
+                  {item.s ? `Semana ${item.s}` : item.t}
+                </td>
+                <td style={{padding:10,fontWeight:600,color:"#0f2754"}}>{item.mat || "—"}</td>
+                <td style={{padding:10,color:"#64748b"}}>{item.dia || "—"}</td>
+                <td style={{padding:10,color:"#64748b"}}>{fmtDate(item.fc)}</td>
+                <td style={{padding:10}}>
+                  <span style={{fontSize:11,fontWeight:600,padding:"3px 8px",borderRadius:4,
+                    background:item.t==="Clase"?"#d1fae5":"#fee2e2",color:item.t==="Clase"?"#065f46":"#991b1b"}}>
+                    {item.t}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style={{marginTop:20,background:"#ede9fe",borderRadius:12,padding:16,border:"1px solid #ddd6fe"}}>
+      <p style={{fontSize:12,color:"#7c3aed",fontWeight:600,margin:0}}>
+        ℹ️ Actualmente puedes ver el cronograma. Para editarlo, puedes contactar al equipo técnico o usar Firestore Console directamente.
+      </p>
+    </div>
+  </div>;
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

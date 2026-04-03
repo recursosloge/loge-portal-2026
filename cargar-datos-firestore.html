@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cargar Datos a Firestore - LOGE 2026</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0f4f8;
+      color: #1a202c;
+      padding: 20px;
+    }
+    .container { max-width: 600px; margin: 0 auto; }
+    header { background: #0f2754; color: #fff; padding: 20px; text-align: center; border-radius: 12px; margin-bottom: 20px; }
+    header h1 { font-size: 24px; margin-bottom: 8px; }
+    .card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .card h2 { font-size: 18px; font-weight: 700; color: #0f2754; margin-bottom: 12px; }
+    .item { padding: 12px; background: #f8fafc; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid #2563eb; }
+    .item-label { font-weight: 600; color: #0f2754; }
+    .item-value { font-size: 14px; color: #64748b; margin-top: 4px; }
+    button {
+      width: 100%;
+      padding: 14px;
+      background: #0f2754;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-bottom: 8px;
+      transition: all 0.2s;
+    }
+    button:hover { background: #1a3a52; }
+    button:disabled { background: #cbd5e1; cursor: not-allowed; }
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+    .status.success { background: #dcfce7; color: #166534; border-left: 3px solid #22c55e; }
+    .status.error { background: #fee2e2; color: #991b1b; border-left: 3px solid #ef4444; }
+    .status.loading { background: #dbeafe; color: #1e40af; border-left: 3px solid #3b82f6; }
+    .progress { background: #e2e8f0; border-radius: 4px; height: 8px; margin: 12px 0; overflow: hidden; }
+    .progress-bar { background: #2563eb; height: 100%; transition: width 0.3s; }
+    .log {
+      background: #1a202c;
+      color: #10b981;
+      padding: 12px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📊 Cargar Datos a Firestore</h1>
+      <p>LOGE Portal 2026</p>
+    </header>
+
+    <div class="card">
+      <h2>Datos a Cargar</h2>
+      <div class="item">
+        <div class="item-label">📅 Cronograma (SCHEDULE)</div>
+        <div class="item-value">84 registros de clases por semana, año y quarter</div>
+      </div>
+      <div class="item">
+        <div class="item-label">📚 Materias</div>
+        <div class="item-value">17 materias con profesores y emails</div>
+      </div>
+      <div class="item">
+        <div class="item-label">⭐ Capacidades</div>
+        <div class="item-value">6 capacidades directivas (2 por año)</div>
+      </div>
+      <div class="item">
+        <div class="item-label">📣 Avisos</div>
+        <div class="item-value">5 avisos iniciales</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Carga de Datos</h2>
+      <div id="statusDiv"></div>
+      <div class="progress" style="display: none;" id="progressContainer">
+        <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+      </div>
+      <button id="cargarBtn" onclick="cargarTodos()">🚀 Cargar Todos los Datos</button>
+      <button onclick="cargarSchedule()" style="background: #2563eb;">📅 Solo Cronograma</button>
+      <button onclick="cargarMaterias()" style="background: #059669;">📚 Solo Materias</button>
+      <button onclick="cargarCapacidades()" style="background: #7c3aed;">⭐ Solo Capacidades</button>
+      <button onclick="cargarAvisos()" style="background: #d97706;">📣 Solo Avisos</button>
+      <div class="log" id="logDiv" style="display: none;"></div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAddzw3OReVYbhZ3l9VcrG4qXxT8GH7uSY",
+      authDomain: "loge-portal-2026.firebaseapp.com",
+      projectId: "loge-portal-2026",
+      storageBucket: "loge-portal-2026.firebasestorage.app",
+      messagingSenderId: "755217961755",
+      appId: "1:755217961755:web:32bb9673533bc2a0c279be"
+    };
+
+    let db = null;
+    let logsArray = [];
+
+    function initFirebase() {
+      if (typeof firebase === 'undefined') {
+        setTimeout(initFirebase, 500);
+        return;
+      }
+      try {
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.firestore();
+        console.log('✅ Firebase inicializado');
+      } catch (e) {
+        if (e.code === 'app/duplicate-app') {
+          db = firebase.firestore();
+        }
+      }
+    }
+
+    function addLog(msg) {
+      logsArray.push(msg);
+      const logDiv = document.getElementById('logDiv');
+      logDiv.style.display = 'block';
+      logDiv.innerHTML = logsArray.join('\n');
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function setStatus(msg, type = 'loading') {
+      const statusDiv = document.getElementById('statusDiv');
+      statusDiv.innerHTML = `<div class="status ${type}">${msg}</div>`;
+    }
+
+    function setProgress(actual, total) {
+      const percent = (actual / total) * 100;
+      document.getElementById('progressContainer').style.display = 'block';
+      document.getElementById('progressBar').style.width = percent + '%';
+    }
+
+    async function cargarSchedule() {
+      if (!db) { setStatus('❌ Firebase no está conectado', 'error'); return; }
+      setStatus('📅 Cargando cronograma...', 'loading');
+      logsArray = [];
+      addLog('Iniciando carga de SCHEDULE...');
+
+      const SCHEDULE = [
+        {a:1,q:"Otoño",t:"Clase",s:1,fd:"2026-03-17",fh:"2026-03-23",fc:"2026-03-17",dia:"martes",mat:"POE",obs:null},
+        {a:1,q:"Otoño",t:"Clase",s:2,fd:"2026-03-24",fh:"2026-03-30",fc:"2026-03-25",dia:"miércoles",mat:"AF",obs:"Feriado 24/03 → clase pasa a miércoles 25/03"},
+        {a:1,q:"Otoño",t:"Clase",s:3,fd:"2026-03-31",fh:"2026-04-06",fc:"2026-03-31",dia:"martes",mat:"FPGE",obs:null},
+        {a:1,q:"Otoño",t:"Clase",s:4,fd:"2026-04-07",fh:"2026-04-13",fc:"2026-04-07",dia:"martes",mat:"Taller Integración – F1",obs:null},
+        {a:1,q:"Otoño",t:"Clase",s:5,fd:"2026-04-14",fh:"2026-04-20",fc:"2026-04-14",dia:"martes",mat:"POE",obs:null},
+        {a:1,q:"Otoño",t:"Clase",s:6,fd:"2026-04-21",fh:"2026-04-27",fc:"2026-04-21",dia:"martes",mat:"AF",obs:null},
+        {a:1,q:"Otoño",t:"Clase",s:7,fd:"2026-04-28",fh:"2026-05-04",fc:"2026-04-28",dia:"martes",mat:"FPGE",obs:null},
+        {a:1,q:"Otoño",t:"Clase",s:8,fd:"2026-05-05",fh:"2026-05-11",fc:"2026-05-05",dia:"martes",mat:"Taller Integración – F1",obs:null},
+        {a:1,q:"Otoño",t:"Clase",s:9,fd:"2026-05-12",fh:"2026-05-18",fc:"2026-05-12",dia:"martes",mat:"POE",obs:null},
+        {a:1,q:"Otoño",t:"Clase",s:10,fd:"2026-05-19",fh:"2026-05-25",fc:"2026-05-19",dia:"martes",mat:"AF",obs:null},
+        {a:1,q:"Otoño",t:"Clase",s:11,fd:"2026-05-26",fh:"2026-06-01",fc:"2026-05-26",dia:"martes",mat:"FPGE",obs:null},
+        {a:1,q:"Otoño",t:"Clase",s:12,fd:"2026-06-02",fh:"2026-06-08",fc:"2026-06-02",dia:"martes",mat:"Taller Integración – F1",obs:null},
+        {a:1,q:"Otoño",t:"Break",s:null,fd:"2026-06-09",fh:"2026-06-15",fc:null,dia:null,mat:null,obs:"Sin actividad de cursada"},
+        {a:1,q:"Invierno",t:"Clase",s:1,fd:"2026-06-16",fh:"2026-06-22",fc:"2026-06-16",dia:"martes",mat:"MIE",obs:null},
+        {a:1,q:"Invierno",t:"Clase",s:2,fd:"2026-06-23",fh:"2026-06-29",fc:"2026-06-23",dia:"martes",mat:"DPSI",obs:null},
+        {a:1,q:"Invierno",t:"Clase",s:3,fd:"2026-06-30",fh:"2026-07-06",fc:"2026-06-30",dia:"martes",mat:"EI",obs:null},
+        {a:1,q:"Invierno",t:"Clase",s:4,fd:"2026-07-07",fh:"2026-07-13",fc:"2026-07-07",dia:"martes",mat:"Taller Integración – F2",obs:null},
+        {a:1,q:"Invierno",t:"Clase",s:5,fd:"2026-07-14",fh:"2026-07-20",fc:"2026-07-14",dia:"martes",mat:"MIE",obs:null},
+        {a:1,q:"Invierno",t:"Clase",s:6,fd:"2026-07-21",fh:"2026-07-27",fc:"2026-07-21",dia:"martes",mat:"DPSI",obs:null},
+        {a:1,q:"Invierno",t:"Receso",s:null,fd:"2026-07-28",fh:"2026-08-03",fc:null,dia:null,mat:null,obs:"Receso de invierno UA (sin clases)"},
+        {a:1,q:"Invierno",t:"Clase",s:7,fd:"2026-08-04",fh:"2026-08-10",fc:"2026-08-04",dia:"martes",mat:"EI",obs:null},
+        {a:1,q:"Invierno",t:"Clase",s:8,fd:"2026-08-11",fh:"2026-08-17",fc:"2026-08-11",dia:"martes",mat:"Taller Integración – F2",obs:null},
+        {a:1,q:"Invierno",t:"Clase",s:9,fd:"2026-08-18",fh:"2026-08-24",fc:"2026-08-18",dia:"martes",mat:"MIE",obs:null},
+        {a:1,q:"Invierno",t:"Clase",s:10,fd:"2026-08-25",fh:"2026-08-31",fc:"2026-08-25",dia:"martes",mat:"DPSI",obs:null},
+        {a:1,q:"Invierno",t:"Clase",s:11,fd:"2026-09-01",fh:"2026-09-07",fc:"2026-09-01",dia:"martes",mat:"EI",obs:null},
+        {a:1,q:"Invierno",t:"Clase",s:12,fd:"2026-09-08",fh:"2026-09-14",fc:"2026-09-08",dia:"martes",mat:"Taller Integración – F2",obs:null},
+        {a:1,q:"Invierno",t:"Break",s:null,fd:"2026-09-15",fh:"2026-09-21",fc:null,dia:null,mat:null,obs:"Sin actividad de cursada"},
+        {a:1,q:"Primavera",t:"Clase",s:1,fd:"2026-09-22",fh:"2026-09-28",fc:"2026-09-22",dia:"martes",mat:"DDC",obs:null},
+        {a:1,q:"Primavera",t:"Clase",s:2,fd:"2026-09-29",fh:"2026-10-05",fc:"2026-09-29",dia:"martes",mat:"PLE",obs:null},
+        {a:1,q:"Primavera",t:"Clase",s:3,fd:"2026-10-06",fh:"2026-10-12",fc:"2026-10-06",dia:"martes",mat:"PCE",obs:null},
+        {a:1,q:"Primavera",t:"Clase",s:4,fd:"2026-10-13",fh:"2026-10-19",fc:"2026-10-13",dia:"martes",mat:"Taller Integración – F3",obs:null},
+        {a:1,q:"Primavera",t:"Clase",s:5,fd:"2026-10-20",fh:"2026-10-26",fc:"2026-10-20",dia:"martes",mat:"DDC",obs:null},
+        {a:1,q:"Primavera",t:"Clase",s:6,fd:"2026-10-27",fh:"2026-11-02",fc:"2026-10-27",dia:"martes",mat:"PLE",obs:null},
+        {a:1,q:"Primavera",t:"Clase",s:7,fd:"2026-11-03",fh:"2026-11-09",fc:"2026-11-03",dia:"martes",mat:"PCE",obs:null},
+        {a:1,q:"Primavera",t:"Clase",s:8,fd:"2026-11-10",fh:"2026-11-16",fc:"2026-11-10",dia:"martes",mat:"Taller Integración – F3",obs:null},
+        {a:1,q:"Primavera",t:"Clase",s:9,fd:"2026-11-17",fh:"2026-11-23",fc:"2026-11-17",dia:"martes",mat:"DDC",obs:null},
+        {a:1,q:"Primavera",t:"Clase",s:10,fd:"2026-11-24",fh:"2026-11-30",fc:"2026-11-24",dia:"martes",mat:"PLE",obs:null},
+        {a:1,q:"Primavera",t:"Clase",s:11,fd:"2026-12-01",fh:"2026-12-07",fc:"2026-12-01",dia:"martes",mat:"PCE",obs:null},
+        {a:1,q:"Primavera",t:"Clase",s:12,fd:"2026-12-08",fh:"2026-12-14",fc:"2026-12-09",dia:"miércoles",mat:"Taller Integración – F3",obs:"Feriado 8/12 → clase pasa a miércoles 9/12"},
+        {a:1,q:"Verano",t:"Recuperatorio",s:null,fd:"2026-12-15",fh:"2026-12-21",fc:null,dia:null,mat:null,obs:"Semana de recuperatorios (sin clases regulares)"},
+        {a:2,q:"Otoño",t:"Clase",s:1,fd:"2026-02-24",fh:"2026-03-02",fc:"2026-02-26",dia:"jueves",mat:"PGE",obs:null},
+        {a:2,q:"Otoño",t:"Clase",s:2,fd:"2026-03-03",fh:"2026-03-09",fc:"2026-03-05",dia:"jueves",mat:"AFR",obs:null},
+        {a:2,q:"Otoño",t:"Clase",s:3,fd:"2026-03-10",fh:"2026-03-16",fc:"2026-03-12",dia:"jueves",mat:"CI",obs:null},
+        {a:2,q:"Otoño",t:"Clase",s:4,fd:"2026-03-17",fh:"2026-03-23",fc:"2026-03-19",dia:"jueves",mat:"Taller Integración – F4",obs:null},
+        {a:2,q:"Otoño",t:"Clase",s:5,fd:"2026-03-24",fh:"2026-03-30",fc:"2026-03-26",dia:"jueves",mat:"PGE",obs:null},
+        {a:2,q:"Otoño",t:"Clase",s:6,fd:"2026-03-31",fh:"2026-04-06",fc:"2026-04-01",dia:"miércoles",mat:"AFR",obs:"Feriado 2/04 → clase pasa a miércoles 1/04"},
+        {a:2,q:"Otoño",t:"Clase",s:7,fd:"2026-04-07",fh:"2026-04-13",fc:"2026-04-09",dia:"jueves",mat:"CI",obs:null},
+        {a:2,q:"Otoño",t:"Clase",s:8,fd:"2026-04-14",fh:"2026-04-20",fc:"2026-04-16",dia:"jueves",mat:"Taller Integración – F4",obs:null},
+        {a:2,q:"Otoño",t:"Clase",s:9,fd:"2026-04-21",fh:"2026-04-27",fc:"2026-04-23",dia:"jueves",mat:"PGE",obs:null},
+        {a:2,q:"Otoño",t:"Clase",s:10,fd:"2026-04-28",fh:"2026-05-04",fc:"2026-04-30",dia:"jueves",mat:"AFR",obs:null},
+        {a:2,q:"Otoño",t:"Clase",s:11,fd:"2026-05-05",fh:"2026-05-11",fc:"2026-05-07",dia:"jueves",mat:"CI",obs:null},
+        {a:2,q:"Otoño",t:"Clase",s:12,fd:"2026-05-12",fh:"2026-05-18",fc:"2026-05-14",dia:"jueves",mat:"Taller Integración – F4",obs:null},
+        {a:2,q:"Otoño",t:"Break",s:null,fd:"2026-05-19",fh:"2026-05-25",fc:null,dia:null,mat:null,obs:"Sin actividad de cursada"},
+        {a:2,q:"Invierno",t:"Clase",s:1,fd:"2026-05-26",fh:"2026-06-01",fc:"2026-05-28",dia:"jueves",mat:"GSET",obs:null},
+        {a:2,q:"Invierno",t:"Clase",s:2,fd:"2026-06-02",fh:"2026-06-08",fc:"2026-06-04",dia:"jueves",mat:"LEE",obs:null},
+        {a:2,q:"Invierno",t:"Clase",s:3,fd:"2026-06-09",fh:"2026-06-15",fc:"2026-06-11",dia:"jueves",mat:"AE",obs:null},
+        {a:2,q:"Invierno",t:"Clase",s:4,fd:"2026-06-16",fh:"2026-06-22",fc:"2026-06-18",dia:"jueves",mat:"Taller Integración – F5",obs:null},
+        {a:2,q:"Invierno",t:"Clase",s:5,fd:"2026-06-23",fh:"2026-06-29",fc:"2026-06-25",dia:"jueves",mat:"GSET",obs:null},
+        {a:2,q:"Invierno",t:"Clase",s:6,fd:"2026-06-30",fh:"2026-07-06",fc:"2026-07-02",dia:"jueves",mat:"LEE",obs:null},
+        {a:2,q:"Invierno",t:"Clase",s:7,fd:"2026-07-07",fh:"2026-07-13",fc:"2026-07-08",dia:"miércoles",mat:"AE",obs:"Feriado 9/07 → clase pasa a miércoles 8/07"},
+        {a:2,q:"Invierno",t:"Receso",s:null,fd:"2026-07-28",fh:"2026-08-03",fc:null,dia:null,mat:null,obs:"Receso de invierno UA (sin clases)"},
+        {a:2,q:"Invierno",t:"Clase",s:8,fd:"2026-08-04",fh:"2026-08-10",fc:"2026-08-06",dia:"jueves",mat:"Taller Integración – F5",obs:null},
+        {a:2,q:"Invierno",t:"Clase",s:9,fd:"2026-08-11",fh:"2026-08-17",fc:"2026-08-13",dia:"jueves",mat:"GSET",obs:null},
+        {a:2,q:"Invierno",t:"Clase",s:10,fd:"2026-08-18",fh:"2026-08-24",fc:"2026-08-20",dia:"jueves",mat:"LEE",obs:null},
+        {a:2,q:"Invierno",t:"Break",s:null,fd:"2026-08-25",fh:"2026-08-31",fc:null,dia:null,mat:null,obs:"Sin actividad de cursada"},
+        {a:2,q:"Invierno",t:"Clase",s:11,fd:"2026-08-25",fh:"2026-08-31",fc:"2026-08-27",dia:"jueves",mat:"AE",obs:null},
+        {a:2,q:"Invierno",t:"Clase",s:12,fd:"2026-09-01",fh:"2026-09-07",fc:"2026-09-03",dia:"jueves",mat:"Taller Integración – F5",obs:null},
+        {a:2,q:"Primavera",t:"Clase",s:1,fd:"2026-09-01",fh:"2026-09-07",fc:"2026-09-03",dia:"jueves",mat:"GIE",obs:null},
+        {a:2,q:"Primavera",t:"Clase",s:2,fd:"2026-09-08",fh:"2026-09-14",fc:"2026-09-10",dia:"jueves",mat:"EDP",obs:null},
+        {a:2,q:"Primavera",t:"Clase",s:3,fd:"2026-09-15",fh:"2026-09-21",fc:"2026-09-17",dia:"jueves",mat:"Electiva",obs:null},
+        {a:2,q:"Primavera",t:"Clase",s:4,fd:"2026-09-22",fh:"2026-09-28",fc:"2026-09-24",dia:"jueves",mat:"Taller Integración – F6",obs:null},
+        {a:2,q:"Primavera",t:"Clase",s:5,fd:"2026-09-29",fh:"2026-10-05",fc:"2026-10-01",dia:"jueves",mat:"GIE",obs:null},
+        {a:2,q:"Primavera",t:"Clase",s:6,fd:"2026-10-06",fh:"2026-10-12",fc:"2026-10-08",dia:"jueves",mat:"EDP",obs:null},
+        {a:2,q:"Primavera",t:"Clase",s:7,fd:"2026-10-13",fh:"2026-10-19",fc:"2026-10-15",dia:"jueves",mat:"Electiva",obs:null},
+        {a:2,q:"Primavera",t:"Clase",s:8,fd:"2026-10-20",fh:"2026-10-26",fc:"2026-10-22",dia:"jueves",mat:"Taller Integración – F6",obs:null},
+        {a:2,q:"Primavera",t:"Clase",s:9,fd:"2026-10-27",fh:"2026-11-02",fc:"2026-10-29",dia:"jueves",mat:"GIE",obs:null},
+        {a:2,q:"Primavera",t:"Clase",s:10,fd:"2026-11-03",fh:"2026-11-09",fc:"2026-11-05",dia:"jueves",mat:"EDP",obs:null},
+        {a:2,q:"Primavera",t:"Clase",s:11,fd:"2026-11-10",fh:"2026-11-16",fc:"2026-11-12",dia:"jueves",mat:"Electiva",obs:null},
+        {a:2,q:"Primavera",t:"Clase",s:12,fd:"2026-11-17",fh:"2026-11-23",fc:"2026-11-19",dia:"jueves",mat:"Taller Integración – F6",obs:null},
+        {a:2,q:"Verano",t:"Recuperatorio",s:null,fd:"2026-12-15",fh:"2026-12-21",fc:null,dia:null,mat:null,obs:"Semana de recuperatorios (sin clases regulares)"},
+      ];
+
+      try {
+        for (let i = 0; i < SCHEDULE.length; i++) {
+          const item = SCHEDULE[i];
+          const docId = `${item.a}_${item.q}_${item.s || 'break'}_${i}`;
+          await db.collection('schedule').doc(docId).set(item);
+          setProgress(i + 1, SCHEDULE.length);
+          addLog(`✅ ${i + 1}/${SCHEDULE.length}: ${item.mat || 'Break'} - ${item.q}`);
+        }
+        setStatus('✅ Cronograma cargado correctamente', 'success');
+      } catch (e) {
+        setStatus('❌ Error: ' + e.message, 'error');
+        addLog('❌ Error: ' + e.message);
+      }
+    }
+
+    async function cargarMaterias() {
+      if (!db) { setStatus('❌ Firebase no está conectado', 'error'); return; }
+      setStatus('📚 Cargando materias...', 'loading');
+      logsArray = [];
+      addLog('Iniciando carga de MATERIAS...');
+
+      const MATERIAS = {
+        POE:  {a:1,q:"Otoño",    n:"Principios de organización educativa",          ps:[{n:"Julio Durand",e:"jdurand@austral.edu.ar"},{n:"Guillermo Cassanova",e:"gdcasanova@mail.austral.edu.a"}]},
+        AF:   {a:1,q:"Otoño",    n:"Antropología filosófica",                        ps:[{n:"Juan Assirio",e:"jassirio@austral.edu.ar"}]},
+        FPGE: {a:1,q:"Otoño",    n:"Fundamentos pedagógicos de la Gestión Educativa",ps:[{n:"Graciela Hernández",e:"GHernandez-ext@austral.edu.ar"},{n:"María Victoria García Bouza",e:"MGarciaBouza-ext@austral.edu.ar"}]},
+        MIE:  {a:1,q:"Invierno", n:"Metodología de la investigación educativa",      ps:[{n:"Marina Cuello",e:"mcuello@austral.edu.ar"},{n:"María Gabriela León Bianchi",e:"mgleonbianchi@mail.austral.edu.ar"}]},
+        DPSI: {a:1,q:"Invierno", n:"Diagnóstico, planeamiento y supervisión institucional",ps:[{n:"Diana Bria",e:"dbria@mail.austral.edu.ar"},{n:"Pedro Leon Vivas",e:"PVivas-ext@austral.edu.a"}]},
+        EI:   {a:1,q:"Invierno", n:"Evaluación institucional",                       ps:[{n:"Verónica Poenitz",e:"vpoenitz@austral.edu.ar"},{n:"Ana Kupervaser",e:"AKupervaser-ext@austral.edu.ar"}]},
+        DDC:  {a:1,q:"Primavera",n:"Diseño y desarrollo del currículum",             ps:[{n:"Ramiro Seré",e:"sere@mail.austral.edu.ar"},{n:"José Manuel Groesman",e:"JGroesman-ext@austral.edu.ar"}]},
+        PLE:  {a:1,q:"Primavera",n:"Política y legislación educativa",               ps:[{n:"Jesica Camara",e:"jcamara@mail.austral.edu.ar"}]},
+        PCE:  {a:1,q:"Primavera",n:"Problemáticas contemporáneas de la Educación",   ps:[{n:"Fernando Gimenez Zapiola",e:"FGimenezZapiola-ext@austral.edu.ar"},{n:"José María Randle",e:"JRandle@austral.edu.ar"}]},
+        TI_F1: {a:1,q:"Otoño",   n:"Taller de Integración F1",                       ps:[{n:"Verónica Poenitz",e:"vpoenitz@austral.edu.ar"},{n:"María Coelho",e:"mcoelho@austral.edu.ar"}]},
+        TI_F2: {a:1,q:"Invierno",n:"Taller de Integración F2",                       ps:[{n:"Verónica Poenitz",e:"vpoenitz@austral.edu.ar"},{n:"María Coelho",e:"mcoelho@austral.edu.ar"}]},
+        TI_F3: {a:1,q:"Primavera",n:"Taller de Integración F3",                      ps:[{n:"Verónica Poenitz",e:"vpoenitz@austral.edu.ar"},{n:"María Coelho",e:"mcoelho@austral.edu.ar"}]},
+        PGE:  {a:2,q:"Otoño",    n:"Principios de la Gestión Educativa",             ps:[{n:"Joaquín Viqueira",e:"JViqueira-ext@austral.edu.ar"},{n:"María Coelho",e:"mcoelho@austral.edu.ar"}]},
+        AFR:  {a:2,q:"Otoño",    n:"Administración financiera de recursos",          ps:[{n:"Mariana Teraussnnigg",e:"MTraussnigg-ext@austral.edu.ar"},{n:"Liliana Fassi",e:"fassi@mail.austral.edu.ar"}]},
+        CI:   {a:2,q:"Otoño",    n:"Comunicación institucional",                     ps:[{n:"Cesar Caldarolla",e:"ccaldarola@austral.edu.ar"}]},
+        GSET: {a:2,q:"Invierno", n:"Gestión socio-emocional del talento",            ps:[{n:"Gastón del Rio",e:"GDelRio@austral.edu.a"}]},
+        LEE:  {a:2,q:"Invierno", n:"Liderazgo de equipos educativos",                ps:[{n:"Guillermo Luquez",e:"gluquez@austral.edu.ar"},{n:"Pedro Leon Vivas",e:"PVivas-ext@austral.edu.a"}]},
+        AE:   {a:2,q:"Invierno", n:"Antropología de la Educación",                   ps:[{n:"Juan Assirio",e:"jassirio@austral.edu.ar"},{n:"María Coelho",e:"mcoelho@austral.edu.ar"}]},
+        GIE:  {a:2,q:"Primavera",n:"Gestión de la innovación educativa",             ps:[{n:"Laura Ferrofino",e:"LFerrofino@austral.edu.ar"},{n:"Marina Leitner",e:"MLeitner-ext@austral.edu.a"}]},
+        EDP:  {a:2,q:"Primavera",n:"Ética y Deontología profesional",                ps:[{n:"Juan Assirio",e:"jassirio@austral.edu.ar"}]},
+        Electiva:{a:2,q:"Primavera",n:"Materia electiva (entre varias propuestas)",  ps:[]},
+        TI_F4: {a:2,q:"Otoño",   n:"Taller de Integración F4",                       ps:[{n:"Sebastián Villar",e:"svillar@austral.edu.ar"},{n:"María Gabriela León Bianchi",e:"mgleonbianchi@mail.austral.edu.ar"}]},
+        TI_F5: {a:2,q:"Invierno",n:"Taller de Integración F5",                       ps:[{n:"Sebastián Villar",e:"svillar@austral.edu.ar"},{n:"María Gabriela León Bianchi",e:"mgleonbianchi@mail.austral.edu.ar"}]},
+        TI_F6: {a:2,q:"Primavera",n:"Taller de Integración F6",                      ps:[{n:"Sebastián Villar",e:"svillar@austral.edu.ar"},{n:"María Gabriela León Bianchi",e:"mgleonbianchi@mail.austral.edu.ar"}]},
+      };
+
+      try {
+        let i = 0;
+        const keys = Object.keys(MATERIAS);
+        for (const key of keys) {
+          const materia = MATERIAS[key];
+          await db.collection('materias').doc(key).set(materia);
+          i++;
+          setProgress(i, keys.length);
+          addLog(`✅ ${i}/${keys.length}: ${key} - ${materia.n}`);
+        }
+        setStatus('✅ Materias cargadas correctamente', 'success');
+      } catch (e) {
+        setStatus('❌ Error: ' + e.message, 'error');
+        addLog('❌ Error: ' + e.message);
+      }
+    }
+
+    async function cargarCapacidades() {
+      if (!db) { setStatus('❌ Firebase no está conectado', 'error'); return; }
+      setStatus('⭐ Cargando capacidades...', 'loading');
+      logsArray = [];
+      addLog('Iniciando carga de CAPACIDADES...');
+
+      const CAPACIDADES = {
+        "1-Otoño": {nombre: "Capacidad reflexiva e integradora",descripcion: "Esta capacidad consiste en interpretar y analizar críticamente los fundamentos antropológicos, epistemológicos y éticos que sustentan los proyectos educativos y las propuestas curriculares."},
+        "1-Invierno": {nombre: "Capacidad de diagnóstico, planeamiento, evaluación y supervisión institucional",descripcion: "Esta capacidad consiste en analizar críticamente los paradigmas actuales que influyen en la educación."},
+        "1-Primavera": {nombre: "Capacidad de planeamiento institucional y curricular",descripcion: "Esta capacidad se centra en conceptualizar y analizar críticamente teorías y modelos de enseñanza-aprendizaje."},
+        "2-Otoño": {nombre: "Capacidad de Gestión y Organización Institucional",descripcion: "Esta capacidad consiste en construir una visión estratégica compartida."},
+        "2-Invierno": {nombre: "Capacidad de liderazgo de personas y equipos",descripcion: "Esta capacidad se orienta a motivar, conducir y alinear a las personas y equipos hacia metas comunes."},
+        "2-Primavera": {nombre: "Capacidad de Gestión del Cambio para la Mejora",descripcion: "Esta capacidad implica liderar e implementar procesos de transformación institucional orientados a la mejora continua."},
+      };
+
+      try {
+        let i = 0;
+        const keys = Object.keys(CAPACIDADES);
+        for (const key of keys) {
+          const cap = CAPACIDADES[key];
+          await db.collection('capacidades').doc(key).set(cap);
+          i++;
+          setProgress(i, keys.length);
+          addLog(`✅ ${i}/${keys.length}: ${key}`);
+        }
+        setStatus('✅ Capacidades cargadas correctamente', 'success');
+      } catch (e) {
+        setStatus('❌ Error: ' + e.message, 'error');
+        addLog('❌ Error: ' + e.message);
+      }
+    }
+
+    async function cargarAvisos() {
+      if (!db) { setStatus('❌ Firebase no está conectado', 'error'); return; }
+      setStatus('📣 Cargando avisos...', 'loading');
+      logsArray = [];
+      addLog('Iniciando carga de AVISOS...');
+
+      const AVISOS = [
+        {id:1,fecha:"2026-03-17",titulo:"¡Bienvenidos al año académico 2026!",texto:"Comenzamos el nuevo año de la LOGE. Les recordamos revisar el cronograma de clases en esta plataforma y estar atentos a los avisos ante posibles cambios de día por feriados.",tipo:"info",year:0,pinned:true,vencimiento:null,autor:"Dirección LOGE"},
+        {id:2,fecha:"2026-03-24",titulo:"Cambio de día – Semana 2 (1° año)",texto:"Por el feriado del 24/03, la clase de AF de 1° año pasa al miércoles 25/03.",tipo:"cambio",year:1,pinned:false,vencimiento:null,autor:"Coordinación"},
+        {id:3,fecha:"2026-03-31",titulo:"Cambio de día – Semana 6 (2° año)",texto:"Por el feriado del 2/04, la clase de AFR de 2° año pasa al miércoles 1/04.",tipo:"cambio",year:2,pinned:false,vencimiento:null,autor:"Coordinación"},
+        {id:4,fecha:"2026-04-01",titulo:"Recordatorio: Taller Integración F1",texto:"Se acerca el Taller de Integración F1. Revisen las consignas y coordinen con sus grupos.",tipo:"entrega",year:1,pinned:true,vencimiento:"2026-04-07",autor:"Coordinadores F1"},
+        {id:5,fecha:"2026-07-01",titulo:"Receso de invierno: 28 jul – 3 ago",texto:"No hay clases durante el receso de invierno de la Universidad Austral.",tipo:"info",year:0,pinned:false,vencimiento:null,autor:"Dirección LOGE"},
+      ];
+
+      try {
+        for (let i = 0; i < AVISOS.length; i++) {
+          const aviso = AVISOS[i];
+          await db.collection('avisos').doc('aviso_' + aviso.id).set(aviso);
+          setProgress(i + 1, AVISOS.length);
+          addLog(`✅ ${i + 1}/${AVISOS.length}: ${aviso.titulo}`);
+        }
+        setStatus('✅ Avisos cargados correctamente', 'success');
+      } catch (e) {
+        setStatus('❌ Error: ' + e.message, 'error');
+        addLog('❌ Error: ' + e.message);
+      }
+    }
+
+    async function cargarTodos() {
+      document.getElementById('cargarBtn').disabled = true;
+      logsArray = [];
+      setStatus('🚀 Iniciando carga completa...', 'loading');
+      addLog('>>> Iniciando carga completa de datos...\n');
+
+      await cargarSchedule();
+      addLog('\n>>> Schedule completado\n');
+      await new Promise(r => setTimeout(r, 500));
+
+      await cargarMaterias();
+      addLog('\n>>> Materias completado\n');
+      await new Promise(r => setTimeout(r, 500));
+
+      await cargarCapacidades();
+      addLog('\n>>> Capacidades completado\n');
+      await new Promise(r => setTimeout(r, 500));
+
+      await cargarAvisos();
+      addLog('\n>>> Avisos completado\n');
+
+      setStatus('🎉 ¡TODOS LOS DATOS CARGADOS CORRECTAMENTE!', 'success');
+      document.getElementById('cargarBtn').disabled = false;
+    }
+
+    initFirebase();
+  </script>
+</body>
+</html>
